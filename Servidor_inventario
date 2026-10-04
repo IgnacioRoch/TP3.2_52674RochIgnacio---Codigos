@@ -1,0 +1,54 @@
+import socket
+
+def recibir_respuesta_completa(sock):
+    """Recibe datos del socket hasta detectar el delimitador de fin."""
+    datos = ""
+    while True:
+        chunk = sock.recv(4096).decode('utf-8')
+        datos += chunk
+        if "---FIN_RESPUESTA---" in datos:
+            break
+    return datos.replace("\n---FIN_RESPUESTA---", "")
+
+def iniciar_servidor_consultas():
+    ip_target = input("Ingrese IP del equipo a inventariar (default 127.0.0.1): ").strip() or "127.0.0.1"
+    puerto_target = 6000
+
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        sock.connect((ip_target, puerto_target))
+        print(f"[ÉXITO] Conectado al equipo inventariado ({ip_target}:{puerto_target})")
+    except Exception as e:
+        print(f"[ERROR] No se pudo conectar con el agente: {e}")
+        return
+
+    while True:
+        print("\n================ MENÚ DE INVENTARIO ================")
+        print("1. Características del Procesador (/proc/cpuinfo)")
+        print("2. Memoria RAM (free -m)")
+        print("3. Estado del Disco, Filesystem y Particiones (df -h / lsblk)")
+        print("4. Promedio de Carga (/proc/loadavg)")
+        print("5. Versión del Sistema Operativo (hostnamectl)")
+        print("6. Interfaces de Red (ip address)")
+        print("7. Procesos Ejecutándose (ps aux)")
+        print("8. Salir")
+        print("====================================================")
+        
+        opcion = input("Seleccione una opción (1-8): ").strip()
+
+        if opcion == "8":
+            sock.sendall("SALIR".encode('utf-8'))
+            break
+        elif opcion in ["1", "2", "3", "4", "5", "6", "7"]:
+            sock.sendall(opcion.encode('utf-8'))
+            respuesta = recibir_respuesta_completa(sock)
+            print("\n--- RESPUESTA DEL EQUIPO REMOTO ---")
+            print(respuesta)
+        else:
+            print("Opción inválida. Intente de nuevo.")
+
+    sock.close()
+    print("[INFO] Conexión cerrada.")
+
+if __name__ == "__main__":
+    iniciar_servidor_consultas()

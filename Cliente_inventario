@@ -1,0 +1,75 @@
+import socket
+import subprocess
+import os
+
+HOST = '0.0.0.0'
+PORT = 6000
+
+def ejecutar_comando(comando):
+    """Ejecuta un comando del sistema y devuelve la salida limpia."""
+    try:
+        return subprocess.getoutput(comando)
+    except Exception as e:
+        return f"Error al ejecutar comando: {e}"
+
+def leer_proc(ruta):
+    """Lee el contenido de un archivo virtual en /proc."""
+    if os.path.exists(ruta):
+        try:
+            with open(ruta, 'r') as f:
+                return f.read().strip()
+        except Exception as e:
+            return f"Error leyendo {ruta}: {e}"
+    return "Archivo no encontrado"
+
+def atender_consulta(conn, addr):
+    print(f"[CONEXIÓN] Servidor de inventario conectado desde {addr}")
+    
+    while True:
+        try:
+            peticion = conn.recv(1024).decode('utf-8').strip()
+            if not peticion or peticion == "SALIR":
+                break
+            
+            respuesta = ""
+            if peticion == "1": # CPU Info
+                respuesta = leer_proc('/proc/cpuinfo')
+            elif peticion == "2": # Memoria RAM
+                respuesta = ejecutar_comando('free -m')
+            elif peticion == "3": # Estado del Disco / Filesystem / Particiones
+                respuesta = ejecutar_comando('df -h && echo "\n--- Particiones ---" && lsblk')
+            elif peticion == "4": # Promedio de Carga (loadavg)
+                respuesta = leer_proc('/proc/loadavg')
+            elif peticion == "5": # Versión del Sistema Operativo
+                respuesta = ejecutar_comando('hostnamectl || uname -a')
+            elif peticion == "6": # Interfaces de Red
+                respuesta = ejecutar_comando('ip address')
+            elif peticion == "7": # Procesos Ejecutándose
+                respuesta = ejecutar_comando('ps aux | head -n 20') # Limitado a los primeros 20
+            else:
+                respuesta = "Comando no reconocido."
+
+            # Enviar el tamaño de la respuesta primero o delimitador de fin
+            respuesta_completa = respuesta + "\n---FIN_RESPUESTA---"
+            conn.sendall(respuesta_completa.encode('utf-8'))
+
+        except Exception as e:
+            print(f"[ERROR] Ocurrió una excepción: {e}")
+            break
+
+    conn.close()
+    print("[DESCONEXIÓN] Sesión finalizada.")
+
+def iniciar_cliente_agente():
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    s.bind((HOST, PORT))
+    s.listen(1)
+    print(f"[AGENTE DE INVENTARIO] Escuchando en el puerto TCP {PORT}...")
+    
+    while True:
+        conn, addr = s.accept()
+        atender_consulta(conn, addr)
+
+if __name__ == "__main__":
+    iniciar_cliente_agente()

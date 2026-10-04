@@ -1,0 +1,70 @@
+import socket
+import threading
+import sys
+
+def recibir_mensajes(sock):
+    """Hilo secundario para recibir mensajes del servidor en tiempo real."""
+    while True:
+        try:
+            mensaje = sock.recv(1024).decode('utf-8')
+            if not mensaje:
+                print("\n[INFO] Conexión cerrada por el servidor.")
+                break
+            print(f"\n{mensaje}\n> ", end="")
+        except Exception:
+            print("\n[ERROR] Se perdió la conexión con el servidor.")
+            break
+    sock.close()
+    sys.exit()
+
+def iniciar_cliente():
+    host = input("Ingrese IP del Servidor (default 127.0.0.1): ").strip() or "127.0.0.1"
+    puerto = input("Ingrese Puerto del Servidor (default 5000): ").strip() or "5000"
+    puerto = int(puerto)
+    
+    nickname = input("Ingrese su Nombre de Usuario: ").strip()
+
+    # 1. Creación del socket TCP
+    client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    
+    try:
+        # 2. Establecer conexión con el servidor (connect)
+        client_socket.connect((host, puerto))
+        print(f"[ÉXITO] Conectado exitosamente al servidor {host}:{puerto}")
+        
+        # Enviar el nickname como registro inicial
+        client_socket.send(nickname.encode('utf-8'))
+    except Exception as e:
+        print(f"[ERROR] No se pudo conectar al servidor: {e}")
+        return
+
+    # Iniciar hilo para la recepción continua de datos
+    hilo_recepcion = threading.Thread(target=recibir_mensajes, args=(client_socket,))
+    hilo_recepcion.daemon = True
+    hilo_recepcion.start()
+
+    print("--- Chat iniciado --- Comandos útiles: /listar, /quitar\n")
+    
+    # Bucle principal para el envío de mensajes
+    while True:
+        try:
+            mensaje = input("> ")
+            if not mensaje.strip():
+                continue
+            
+            client_socket.send(mensaje.encode('utf-8'))
+            
+            if mensaje.strip() == "/quitar":
+                print("[INFO] Saliendo del chat...")
+                break
+        except KeyboardInterrupt:
+            client_socket.send("/quitar".encode('utf-8'))
+            break
+        except Exception as e:
+            print(f"[ERROR] Fallo al enviar mensaje: {e}")
+            break
+
+    client_socket.close()
+
+if __name__ == "__main__":
+    iniciar_cliente()

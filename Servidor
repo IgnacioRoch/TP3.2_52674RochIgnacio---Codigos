@@ -1,0 +1,92 @@
+import socket
+import threading
+
+# Configuracion del servidor
+HOST = '0.0.0.0' # Escucha en todas las interfaces de red
+PORT = 5000 # Puerto arbitrario no reservado
+
+# Diccionario para almacenar clientes: {socket: nickname}
+clientes = {}
+
+def retransmitir(mensaje, socket_origen=None):
+    """Retransmite un mensaje a todos los clientes conectados excepto al origen (opcional)."""
+    for client_socket in list(clientes.keys()):
+        try:
+            client_socket.send(mensaje.encode('utf-8'))
+        except Exception:
+            # Si falla el envío, cerramos y removemos la conexión
+            cerrar_conexion(client_socket)
+
+def cerrar_conexion(client_socket):
+    """Maneja la desconexión limpia de un cliente."""
+    if client_socket in clientes:
+        nickname = clientes[client_socket]
+        del clientes[client_socket]
+        client_socket.close()
+        aviso = f"[SERVIDOR] *** {nickname} ha abandonado el chat. ***"
+        print(aviso)
+        retransmitir(aviso)
+def atender_cliente(client_socket, client_address):
+    """Hilo encargado de recibir los mensajes de un cliente específico."""
+    print(f"[NUEVA CONEXIÓN] {client_address} conectado.")
+    try:
+        # El primer mensaje recibido es el nombre de usuario (nickname)
+        nickname = client_socket.recv(1024).decode('utf-8').strip()
+        clientes[client_socket] = nickname
+        
+        bienvenida = f"[SERVIDOR] ¡Bienvenido al chat, {nickname}!"
+        client_socket.send(bienvenida.encode('utf-8'))
+        
+        anuncio = f"[SERVIDOR] *** {nickname} se ha unido al chat. ***"
+        retransmitir(anuncio, client_socket)
+
+        while True:
+            mensaje = client_socket.recv(1024).decode('utf-8')
+            if not mensaje:
+                break
+            
+            # Comando especial /listar
+            if mensaje.strip() == "/listar":
+                lista_usuarios = ", ".join(clientes.values())
+                respuesta = f"[SERVIDOR] Usuarios conectados: {lista_usuarios}"
+                client_socket.send(respuesta.encode('utf-8'))
+            
+            # Comando especial /quitar
+            elif mensaje.strip() == "/quitar":
+                client_socket.send("[SERVIDOR] Desconectando...".encode('utf-8'))
+                break
+            
+            # Mensaje convencional
+            else:
+                msg_formateado = f"{nickname}: {mensaje}"
+                print(msg_formateado)
+                retransmitir(msg_formateado, client_socket)
+
+    except (ConnectionResetError, Exception) as e:
+        print(f"[ERROR] Excepción con el cliente {client_address}: {e}")
+    finally:
+        cerrar_conexion(client_socket)
+
+def iniciar_servidor():
+    # 1. Creación del socket TCP (IPv4, SOCK_STREAM)
+    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    # Permite reutilizar la dirección inmediatamente tras reiniciar el servidor
+    server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    
+    # 2. Asignación de IP y Puerto (bind)
+    server_socket.bind((HOST, PORT))
+    
+    # 3. Poner en modo escucha (listen)
+    server_socket.listen()
+    print(f"[INICIADO] Servidor de Chat escuchando en {HOST}:{PORT}")
+
+    while True:
+        # 4. Aceptar conexiones entrantes (accept)
+        client_socket, client_address = server_socket.accept()
+        # Crear un hilo para atender cada cliente en paralelo
+        hilo = threading.Thread(target=atender_cliente, args=(client_socket, client_address))
+        hilo.daemon = True
+        hilo.start()
+
+if __name__ == "__main__":
+    iniciar_servidor()
